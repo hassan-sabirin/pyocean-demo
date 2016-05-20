@@ -1,0 +1,62 @@
+from Slb.Ocean.Coordinates import PrePostUnitConversions
+from Slb.Ocean.Units import *
+
+import math
+coord_service = CoreSystem.GetService(ICoordinateService)
+catalog_service = CoreSystem.GetService(ICatalogService)
+unit_service = CoreSystem.GetService(IUnitService)
+
+
+def DoTestPoints5100(projCRS,pt_set):
+  print "51xx: Projection Test\n%s [%s] to %s [%s]" % (projCRS.ReferenceCoordSys,projCRS.ReferenceCoordSys.AuthorityCode,projCRS,projCRS.AuthorityCode)
+  opB = coord_service.CreateOperationToReference(projCRS, PrePostUnitConversions.FromSI)[1]
+  opA = coord_service.CreateOperationFromReference(projCRS, PrePostUnitConversions.ToSI)[1]
+  
+  pt_set_len = len(pt_set)
+  meter_unit = unit_service.Catalogs[0].GetUnit('Meter')
+  m_to_crsunit = PetrelUnitSystem.GetConverter( meter_unit,projCRS.NativeSurfaceUnit)
+  crsunit_to_m = PetrelUnitSystem.GetConverter( projCRS.NativeSurfaceUnit,meter_unit)
+      
+  for i in range(0, pt_set_len):
+    if pt_set[i][2] == 'A':
+      result = opA.Convert( Point3( pt_set[i][1], pt_set[i][0],0) )[1]
+      
+     
+      result = Point3( m_to_crsunit.Convert(result.X), m_to_crsunit.Convert(result.Y),0)
+      
+      print "A\t%s\t%s\t%s\t%s" % ( pt_set[i][0], pt_set[i][1], result.X, result.Y)
+    else:
+      result = opB.Convert( Point3( crsunit_to_m.Convert(pt_set[i][0]), crsunit_to_m.Convert(pt_set[i][1]),0) )[1]
+      print "B\t%s\t%s\t%s\t%s" % ( result.Y, result.X, pt_set[i][0], pt_set[i][1])
+
+
+pt_set_5104pt1 = \
+[
+(132023.27,1114054.872,'B'),
+(57,5,'A'),
+(130792.264,890981.281,'B'),
+(55,5,'A'),
+(129579.261,668240.578,'B'),
+(53,5,'A'),
+(155000,463000,'B'),
+(51,4,'A'),
+(55502.306,224086.514,'B'),
+(49,4,'A'),
+(0,0,'B'),
+
+(-5253.063,559535.55,'B'),
+(53,4,'A'),
+(128979.263,556953.19,'B'),
+(53,6,'A'),
+(263225.722,558092.769,'B'),
+(53,8,'A'),
+(397413.385,562954.436,'B'),
+(53,10,'A'),
+(531469.202,571538.839,'B'),
+
+]
+
+prj_crs = coord_service.GetCoordinateReferenceSystem('EPSG:28992')[1]
+DoTestPoints5100(prj_crs,pt_set_5104pt1)
+ 
+ 
