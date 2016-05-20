@@ -1,0 +1,246 @@
+# WMDB (Well Master Database) connector  
+# Connects to a SQL database and creates the Petrel Geo objects
+
+import clr
+clr.AddReference("Oracle.DataAccess")
+clr.AddReference("System")
+clr.AddReference("System.Data")
+
+import math
+import re
+import System
+pattern = re.compile("top", re.IGNORECASE)
+
+
+from Oracle.DataAccess.Client import OracleConnection
+from Oracle.DataAccess.Client import OracleDataAdapter
+from System.Data import DataTable
+from System import DBNull
+
+WMDB_conn = OracleConnection("User Id=user;Password=xyxyxyxy;Data Source=gisdatabase")
+WMDB_conn.Open()
+
+Finder_conn = OracleConnection("User Id=xxx;Password=xyxyxyxy;Data Source=finder")
+Finder_conn.Open()
+
+cmd = WMDB_conn.CreateCommand()
+cmd.CommandText = "select * from well_master where long_name like 'ANJUNG%' and country = 'INDONESIA'"
+
+prj = PetrelProject.PrimaryProject
+
+if prj.CoordinateReferenceSystem is None:
+  PetrelLogger.ErrorBox('Project has no CRS\n Please define CRS before importing wells')
+  #raise Exception('Project has no CRS')
+
+t = DataManager.NewTransaction()
+
+t.Lock(prj)
+
+# Check project CRS
+
+
+
+well_root = WellRoot.Get(prj)
+root_well_dir = well_root.GetOrCreateBoreholeCollection()
+wmdb_bh_collection = root_well_dir.CreateBoreholeCollection('WMDB')
+bh_prop_c = root_well_dir.BoreholePropertyCollection
+
+
+oda = OracleDataAdapter(cmd)
+bh_records = DataTable("WellHeader");
+oda.Fill(bh_records)
+
+print bh_records.Rows.Count
+for i in range(0, bh_records.Rows.Count-1):
+  bh = wmdb_bh_collection.CreateBorehole(bh_records.Rows[i]['long_name'])
+  
+  pmu_uwi = bh_records.Rows[i]['auth_uwi']
+  
+  if pmu_uwi:
+    bh.UWI = '%s,%s' % (bh_records.Rows[i]['uwi'], uwi)
+  else:
+    bh.UWI = bh_records.Rows[i]['uwi']
+  
+  bh.Operator = bh_records.Rows[i]['operator']
+    
+  if not bh_records.Rows[i].IsNull('spud_date'):
+    bh.SpudDate = bh_records.Rows[i]['spud_date']
+  
+  if not bh_records.Rows[i].IsNull('ori_easting') and not bh_records.Rows[i].IsNull('ori_northing'):
+  
+    ori_easting = bh_records.Rows[i]['ori_easting']
+    ori_northing = bh_records.Rows[i]['ori_northing']
+    
+    ori_crs_authname = bh_records.Rows[i]['ori_crs_authname']
+    ori_crs_authcode = bh_records.Rows[i]['ori_crs_authcode']
+    
+    print 'CRS: %s,%s' % (ori_crs_authname, ori_crs_authcode)
+    #attempt to get the 
+    
+    bh.WellHead = Point2(ori_easting,ori_northing)
+
+
+  if not bh_records.Rows[i].IsNull('rig_elevation'):
+    rig_elev = bh_records.Rows[i]['rig_elevation']
+    dfe_ref = bh_records.Rows[i]['rig_elevation_type']
+  
+  
+  
+    try: #Petrel 2012
+      ref = ReferenceLevel(dfe_ref,rig_elev,'')
+      bh.ReferenceLevels.append(ref)
+      bh.WorkingReferenceLevel = ref
+    except:
+      bh.KellyBushing = rig_elev
+    
+    if not math.isnan(bh.KellyBushing):
+      trajectory_cmd = Finder_conn.CreateCommand()
+      trajectory_cmd.CommandText = """
+    select * from(
+    select * from JAVA.well_dir_srvy_pts
+union
+select * from JAVA.well_dir_srvy_pts
+union
+select * from SUMATRA.well_dir_srvy_pts
+) survey where survey.UWI = '%s'
+
+""" % uwi
+
+      #trajectory_reader = trajectory_cmd.ExecuteReader()
+      oda = OracleDataAdapter(trajectory_cmd)
+      trajectory_records = DataTable("Trajectory");
+      oda.Fill(trajectory_records)
+      print trajectory_records.Rows.Count
+      
+      if trajectory_records.Rows.Count > 1:
+        trajectory_record_set = []
+        
+        #check first one, if not zero, add additional
+        md = trajectory_records.Rows[0]["md"]
+        if md > 0:
+          trajectory_record_set.append(TrajectoryRecord(0,0,0))
+        for i in range(0,trajectory_records.Rows.Count-1):
+          try:
+            md = trajectory_records.Rows[i]["md"]
+            inc = trajectory_records.Rows[i]["deviation_angle"]  / 180.0 * math.pi
+            azimuth = trajectory_records.Rows[i]["azimuth"]  / 180.0 * math.pi
+            trajectory_record_set.append( TrajectoryRecord(md,inc,azimuth))
+            
+          except:
+            pass
+        
+        if len(trajectory_record_set) > 1:
+          bh.Trajectory.Append( trajectory_record_set )
+                   
+    checkshot_cmd = Finder_conn.CreateCommand()
+    checkshot_cmd.CommandText = """
+    select * from(
+    select * from JAVA.well_checksht_srvy
+union
+select * from SUMATRA.well_checksht_srvy
+) survey where survey.UWI = '%s'
+
+""" % uwi
+
+    oda = OracleDataAdapter(checkshot_cmd)
+    checkshot_records = DataTable("Checkshot");
+    oda.Fill(checkshot_records)
+        
+    #print 'Check'trajectory_records.Rows.Count
+    
+    if checkshot_records.Rows.Count > 1:
+      rootLogFolder = well_root.LogVersionCollection
+      t.Lock(rootLogFolder)
+      
+      globalWellLogFolder  = rootLogFolder.CreateLogVersionCollection(bh.Name)
+      
+      t.Lock(globalWellLogFolder)
+      globalCheckshotWellLogFolder = globalWellLogFolder.CreateCheckShotVersion('DefinitiveCheckshot')
+      
+      t.Lock(bh)
+      
+      CheckshotWellLog = bh.Logs.CreateCheckShot(globalCheckshotWellLogFolder)
+      
+      
+      checkshot_record_set = []
+      for i in range(0, checkshot_records.Rows.Count-1):
+        md = checkshot_records.Rows[i]['depth']
+        twt = checkshot_records.Rows[i]['time'] / 1000
+        checkshot_record_set.append(CheckShotSample(md,twt))
+        
+      CheckshotWellLog.Append(checkshot_record_set)
+    
+    marker_cmd = Finder_conn.CreateCommand()
+    marker_cmd.CommandText = """
+    select * from(
+    select * from JAVA.well_surface_pick
+union
+select * from SUMATRA.well_surface_pick
+) survey where survey.UWI = '%s'
+
+""" % pmu_uwi
+
+    oda = OracleDataAdapter(marker_cmd)
+    marker_records = DataTable("Marker");
+    oda.Fill(marker_records)
+    
+    horizon_cmd = Finder_conn.CreateCommand()
+    horizon_cmd.CommandText = """
+    select distinct surface_name, new_md as md from(
+    select surface_name,(-1*md) as new_md from(
+    select surface_name,md,uwi  from JAVA.well_surface_pick where UWI = '{0}'
+union
+select surface_name,md,uwi  from SUMATRA.well_surface_pick where UWI = '{0}'
+) horizon_neg where md < 0 and md <> -999.25
+
+union
+
+select distinct surface_name,md as new_md from(
+    select surface_name,md,uwi  from JAVA.well_surface_pick where UWI = '{0}'
+union
+select surface_name,md,uwi  from SUMATRA.well_surface_pick where UWI = '{0}'
+) horizon_pos where md > 0
+) horizon order by md
+
+""".format(uwi)
+
+    
+    print 'horizon'
+    oda = OracleDataAdapter(horizon_cmd)
+    horizon_records = DataTable("Horizon");
+    oda.Fill(horizon_records)
+    
+    if horizon_records.Rows.Count > 0:
+      marker_folder = well_root.CreateMarkerCollection(bh.Name)
+      first_horizon = marker_folder.CreateFirstHorizon()
+      first_horizon.Name = horizon_records.Rows[0]['surface_name']
+      
+      horizon_tracker = first_horizon
+    
+      for i in range(1, horizon_records.Rows.Count-1):
+        (new_zone,new_horizon) = marker_folder.CreateZoneAndHorizonBelow(horizon_tracker)
+        new_zone.Name = 'Unknown'
+        #if 'TOP' in horizon_tracker.Name.upper():
+        #  new_zone.Name = pattern.sub('', horizon_tracker.Name)
+        #else:
+        #  new_zone.Name = horizon_tracker.Name
+          
+        new_horizon.Name = horizon_records.Rows[i]['surface_name']
+        horizon_tracker = new_horizon
+       
+    
+    
+    if marker_records.Rows.Count > 1:
+      
+      for i in range(0, marker_records.Rows.Count-1):
+        #find the surface for this marker
+        for horizon in marker_folder.AllHorizons:
+          if horizon.Name == marker_records.Rows[i]['surface_name']:
+            marker_folder.CreateMarker(bh,horizon, marker_records.Rows[i]['md'] )
+            break
+    
+    print 'END'
+
+t.Commit()
+Finder_conn.Close()
+WMDB_conn.Close()
