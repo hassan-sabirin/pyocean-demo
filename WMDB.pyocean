@@ -54,9 +54,11 @@ print bh_records.Rows.Count
 for i in range(0, bh_records.Rows.Count-1):
   bh = wmdb_bh_collection.CreateBorehole(bh_records.Rows[i]['long_name'])
   
-  pmu_uwi = bh_records.Rows[i]['auth_uwi']
+  uwi = bh_records.Rows[i]['auth_uwi']
   
-  if pmu_uwi:
+  # GRAB WELL UWI
+  
+  if uwi:
     bh.UWI = '%s,%s' % (bh_records.Rows[i]['uwi'], uwi)
   else:
     bh.UWI = bh_records.Rows[i]['uwi']
@@ -80,6 +82,7 @@ for i in range(0, bh_records.Rows.Count-1):
     bh.WellHead = Point2(ori_easting,ori_northing)
 
 
+  # POPULATE WELL ELEVATIONS
   if not bh_records.Rows[i].IsNull('rig_elevation'):
     rig_elev = bh_records.Rows[i]['rig_elevation']
     dfe_ref = bh_records.Rows[i]['rig_elevation_type']
@@ -106,6 +109,7 @@ select * from SUMATRA.well_dir_srvy_pts
 
 """ % uwi
 
+  # POPULATE WELL TRAJECTORY
       #trajectory_reader = trajectory_cmd.ExecuteReader()
       oda = OracleDataAdapter(trajectory_cmd)
       trajectory_records = DataTable("Trajectory");
@@ -142,6 +146,7 @@ select * from SUMATRA.well_checksht_srvy
 
 """ % uwi
 
+  # POPULATE WELL CHECKSHOTS
     oda = OracleDataAdapter(checkshot_cmd)
     checkshot_records = DataTable("Checkshot");
     oda.Fill(checkshot_records)
@@ -178,8 +183,10 @@ union
 select * from SUMATRA.well_surface_pick
 ) survey where survey.UWI = '%s'
 
-""" % pmu_uwi
+""" % uwi
 
+
+  # POPULATE WELL MARKERS
     oda = OracleDataAdapter(marker_cmd)
     marker_records = DataTable("Marker");
     oda.Fill(marker_records)
@@ -205,6 +212,7 @@ select surface_name,md,uwi  from SUMATRA.well_surface_pick where UWI = '{0}'
 """.format(uwi)
 
     
+  # POPULATE WELL HORIZONS
     print 'horizon'
     oda = OracleDataAdapter(horizon_cmd)
     horizon_records = DataTable("Horizon");
