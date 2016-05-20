@@ -14,7 +14,7 @@ t.Lock(prj)
 seisproj = seisroot.GetOrCreateSeismicProject()
 
 defsrc_id = DataManager.Workspace.DefaultSource.Id
-obj_id = "a87c90dd-551d-4e1c-bec4-51d07856e530"
+obj_id = "a87c90dd-551d-4e1c-bec4-51d07856e530" # was dropped using the Object Dropper
 
 objdroid = Droid(defsrc_id, obj_id)
 dm = DataManager
