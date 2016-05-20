@@ -1,0 +1,43 @@
+from Slb.Ocean.Petrel import *
+from Slb.Ocean.Petrel.DomainObject.Seismic import *
+from Slb.Ocean.Core import *
+
+def log(msg):
+  PetrelLogger.InfoOutputWindow(str(msg))
+
+prj = PetrelProject.PrimaryProject
+seisroot = SeismicRoot.Get(prj)
+t = DataManager.NewTransaction()
+
+t.Lock(prj)
+
+seisproj = seisroot.GetOrCreateSeismicProject()
+
+defsrc_id = DataManager.Workspace.DefaultSource.Id
+obj_id = "a87c90dd-551d-4e1c-bec4-51d07856e530"
+
+objdroid = Droid(defsrc_id, obj_id)
+dm = DataManager
+obj = dm.Resolve(objdroid)
+
+def conv_SP_to_XY(SP):
+  first_SP = seis2Dline.GetShotPoint(0)
+  last_SP = seis2Dline.GetShotPoint(0)
+  pass
+  
+for seis2Dline in obj:
+  sp = seis2Dline.GetShotPoint(0)
+  tp = seis2Dline.TracePositionAtIndex(0)
+  log("SP:%f\tTP:%s" %(sp,tp) )
+  sp = seis2Dline.GetShotPoint(seis2Dline.TraceCount-1)
+  tp = seis2Dline.TracePositionAtIndex(seis2Dline.TraceCount-1)
+  log("SP:%f\tTP:%s" %(sp,tp) )
+
+for seis2Dline in obj:
+  for trace in seis2Dline.Traces:
+    sp = seis2Dline.GetShotPoint(trace.J)
+    cdp = seis2Dline.GetCDP(trace.J)
+    tp = seis2Dline.TracePositionAtIndex(trace.J)
+    #log("SP:%f\tTP:%s\tCDP:%s" %(sp,tp,cdp) )
+
+log("END\n\n")
